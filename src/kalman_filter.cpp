@@ -10,7 +10,6 @@ using Eigen::VectorXd;
 
 KalmanFilter::KalmanFilter() 
 {
-  std::cout << "hi" << std::endl;
   F_ = MatrixXd(4, 4);
   Q_ = MatrixXd(4, 4);
   x_ = MatrixXd(4, 1);
@@ -18,17 +17,16 @@ KalmanFilter::KalmanFilter()
   I_ = MatrixXd(4, 4); 
   H_ = MatrixXd(2, 4);
   //Todo: Is this right???
-  P_ << 100, 0, 0, 0,
-      0, 100, 0, 0,
-      0, 0, 10, 0,
-      0, 0, 10, 0;
+  P_ << 1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1500, 0,
+      0, 0, 0, 1500;
 
   F_ << 1, 0, 1, 0,
       0, 1, 0, 1,
       0, 0, 1, 0,
       0, 0, 0, 1;
 
-  x_ << 0, 0, 0, 0;
 
       
 }
@@ -49,11 +47,9 @@ void KalmanFilter::Predict() {
   /**
    * TODO: predict the state
    */
-  VectorXd x_prime = F_ * x_;
-  MatrixXd p_prime = F_ * P_ * F_.transpose() + Q_;
-
-  x_ = x_prime;
-  P_ = p_prime;
+   x_ = F_ * x_ ;
+  MatrixXd Ft = F_.transpose();
+  P_ = F_ * P_ * Ft + Q_;
 
 }
 
@@ -65,18 +61,26 @@ void KalmanFilter::Update(const VectorXd &z) {
   /**
    * TODO: update the state by using Kalman Filter equations
    */
-  VectorXd y = z - H_ * x_; 
-  MatrixXd S = (H_ * P_ * H_.transpose()) + R_;
-  MatrixXd K = P_ * H_.transpose() * S.inverse();
+  VectorXd laser_pred = H_ * x_;
+  VectorXd y = z - laser_pred;
+  MatrixXd S = H_ * P_ * H_.transpose() + R_;
+  MatrixXd PHt = P_ * H_.transpose();
+  MatrixXd K = PHt * S.inverse();
 
-  VectorXd x_prime = x_ + (K * y);
+  //new estimate
+  x_ = x_ + (K * y);
+  MatrixXd I = MatrixXd::Identity(x_.size(), x_.size());
+  P_ = (I - K * H_) * P_;
 
-  MatrixXd IKH = (I_ - K * H_);
-  MatrixXd P_prime = IKH * P_;
-
-  x_ = x_prime;
-  P_ = P_prime;
-
+}
+double normalizeAngle(double radians) {
+  while (radians > M_PI) {
+    radians -= M_PI;
+  }
+  while (radians < -M_PI) {
+    radians += M_PI;
+  }
+  return radians;
 }
 
 // What's the point of using this ??? is this just for radar measurments?
@@ -84,36 +88,32 @@ void KalmanFilter::UpdateEKF(const VectorXd &z) {
   /**
    * TODO: update the state by using Extended Kalman Filter equations
    */
+  float rho = sqrt(x_(0)*x_(0) + x_(1)*x_(1));
+  float phi = atan2(x_(1), x_(0));
 
-  // Translate x_ into range data
-  float x_val = x_[0];
-  float y_val = x_[1];
-  float v_x = x_[2];
-  float v_y = x_[3];
 
-  float rho = sqrt(pow(x_val, 2) + pow(x_val, 2));
-  float phi = atan2(y_val, x_val);
+
   float rho_dot;
-  if (abs(rho) < 0.01) {
+  if (fabs(rho) < 0.0001) {
     rho_dot = 0;
   } else {
-    rho_dot = ((x_val * v_x) + (y_val * v_y)) / rho;
+    rho_dot = (x_(0)*x_(2) + x_(1)*x_(3))/rho;
   }
+  VectorXd z_pred(3);
+  z_pred << rho, phi, rho_dot;
+  VectorXd y = z - z_pred;
 
-  VectorXd range_pred(3);
-  range_pred << rho, phi, rho_dot;
+  //Normalize the angle
+  double normalized = normalizeAngle(y(1));
+  y(1) = normalized;
+  MatrixXd S = H_ * P_ * H_.transpose() + R_;
+  MatrixXd PHt = P_ * H_.transpose();
+  MatrixXd K = PHt * S.inverse();
 
-
-  VectorXd y = z - range_pred;
-  MatrixXd S = (H_ * P_ * H_.transpose()) + R_;
-  MatrixXd K = P_ * H_.transpose() * S.inverse();
-
-  VectorXd x_prime = x_ + (K * y);
-
-  MatrixXd IKH = (I_ - K * H_);
-  MatrixXd P_prime = IKH * P_;
-
-  x_ = x_prime;
-  P_ = P_prime;
+  //new estimate
+  x_ = x_ + (K * y);
+  MatrixXd I = MatrixXd::Identity(x_.size(), x_.size());
+  P_ = (I - K * H_) * P_;
 
 }
+
