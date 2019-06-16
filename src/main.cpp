@@ -48,7 +48,7 @@ int main() {
     // The 2 signifies a websocket event
     if (length && length > 2 && data[0] == '4' && data[1] == '2') {
       auto s = hasData(string(data));
-
+      
       if (s != "") {
         auto j = json::parse(s);
 
